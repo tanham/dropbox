@@ -25,7 +25,15 @@ async function main() {
     app.get('*', async (req, res, next) => {
 		console.log(req.url)
 		let filePath = path.join(process.cwd(), req.url)
-		let stat = await fs.promise.stat(filePath)
+		try {
+			let stat = await fs.promise.stat(filePath)
+		} catch(e) {
+			return res.send(404, 'Invalid path')
+		}
+
+		if (stat instanceof Error) {
+			console.log('file not existed yet')
+		}
 		
 		console.log(stat);
 		if (stat.isDirectory()) {
