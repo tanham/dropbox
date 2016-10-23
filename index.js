@@ -1,58 +1,59 @@
 #!/usr/bin/env babel-node
+//use strict
 
-'use strict'
-
-require('./helper')
-
-let fs = require('fs')
 let express = require('express')
-//let PromiseRouter = require('express-promise-router')
 let morgan = require('morgan')
-let trycatch = require('trycatch')
-let bodyParser = require('body-parser')
 let nodeify = require('bluebird-nodeify')
+let bodyParser = require('body-parser')
 let mime = require('mime-types')
-let path = require('path')
 
-async function main() {
-    // Use 'await' in here
-    console.log('main()...')
-   
-    let app = express()
-    app.use(morgan('dev'))
+require('songbird')
 
-    
-    app.get('*', async (req, res, next) => {
-		console.log(req.url)
-		let filePath = path.join(process.cwd(), req.url)
-		try {
-			let stat = await fs.promise.stat(filePath)
-		} catch(e) {
-			return res.send(404, 'Invalid path')
-		}
+const NODE_ENV = process.env.NODE_ENV
+const PORT = process.env.PORT || 8000
+const ROOT_DIR = path.resolve(process.cwd())
 
-		if (stat instanceof Error) {
-			console.log('file not existed yet')
-		}
-		
-		console.log(stat);
-		if (stat.isDirectory()) {
-			let files = await fs.promise.readdir(filePath)
-			return res.json(files)
-		}
-		let type = await mime.lookup(filePath)
-		res.setHeader('Content-Type', type)
-		
-		res.setHeader('Content-Length', stat.size)
-		fs.createReadStream(filePath).pipe(res)
-    })
-    
-    app.head('*', (req, res) => { } )
 
-    let port = 8000
-    await app.listen(port)
-    console.log(`LISTENING @ http://127.0.0.1:${port}`)
+let app = express()
 
+if(NODE_ENV === 'development') {
+	app.use(morgan('dev'))
 }
 
-main()
+app.listen(PORT, ()=> console.log(`LISTENING @ http://127.0.0.1:${PORT}`))
+
+app.get('*', sendHeader, (req, res) => {
+	if (res.body){
+		res.json(res.body)
+		return
+	}
+
+	fs.createReadStream(req.filePath).pipe(res)
+
+
+app.head('*', sendHeader, (req, res) => res.end())
+
+function sendHeader(req, res, next) {
+	nodeify(async () => {
+		let filePath = path.resolve(path.join(ROOT_DIR, req.url))
+		req.filePath = filePath
+		if (filePath.indexOf(ROOT_DIR) !== 0) {
+			res.send(400, 'Invalid Path')
+			return
+		}
+
+		let stat = await fs.promise.stat(filePath)
+		if(stat.isDirectory()) {
+			let files = await fs.promise.readdir(filePath)
+			res.body = JSON.stringify(files)
+			res.setHeader('Content-Length', res.body.length)
+			res.setHeader('Content-Type', 'application/json')
+			return
+		}
+		res.setHeader('Content-Length', stat.size)
+		let contentType = mime.contentType(path.extname(filePath))
+		res.setHeader('Content-Type', contentType)
+
+	}, next)
+	
+}
